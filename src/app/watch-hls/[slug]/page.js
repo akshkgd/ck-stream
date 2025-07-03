@@ -5,7 +5,7 @@ import Hls from 'hls.js';
 
 // --- CONFIG ---
 const HLS_URL = 'https://vz-09b5be34-aef.b-cdn.net/429e492d-a215-4a5a-961a-3fb277fd9c24/playlist.m3u8';
-const STREAM_START_TIME = new Date('2025-07-03T20:00:00+05:30'); // IST - Set this to your actual stream start time
+const STREAM_START_TIME = new Date('2025-07-03T20:15:00+05:30'); // IST - Set this to your actual stream start time
 
 export default function WatchHLSPage({ params }) {
   const { slug } = use(params);
