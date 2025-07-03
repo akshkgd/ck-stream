@@ -5,7 +5,7 @@ import Hls from 'hls.js';
 
 // --- CONFIG ---
 const HLS_URL = 'https://vz-09b5be34-aef.b-cdn.net/429e492d-a215-4a5a-961a-3fb277fd9c24/playlist.m3u8';
-const STREAM_START_TIME = new Date('2025-07-03T11:58:00+05:30'); // IST
+const STREAM_START_TIME = new Date('2025-07-03T20:00:00+05:30'); // IST - Set this to your actual stream start time
 
 export default function WatchHLSPage({ params }) {
   const { slug } = use(params);
@@ -16,9 +16,10 @@ export default function WatchHLSPage({ params }) {
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [streamEnded, setStreamEnded] = useState(false);
-  const [videoDuration, setVideoDuration] = useState(null); // null until known
+  const [videoDuration, setVideoDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [hasSeeked, setHasSeeked] = useState(false);
+  const [seekAttempts, setSeekAttempts] = useState(0);
 
   // --- Loader and state check on mount ---
   useEffect(() => {
@@ -28,29 +29,9 @@ export default function WatchHLSPage({ params }) {
     setStreamEnded(false);
     setIsLoading(true);
     setHasSeeked(false);
-    
-    const now = new Date();
-    
-    // Initial check: if we're way past stream start time (more than 2 hours), assume ended
-    const twoHoursAfterStart = new Date(STREAM_START_TIME.getTime() + 2 * 60 * 60 * 1000);
-    if (now > twoHoursAfterStart) {
-      setPageState('ended');
-      setCountdown(null);
-      return;
-    }
-    
-    // Wait for video duration to be known before deciding if ended
-    let timer;
+    setSeekAttempts(0);
     const checkState = () => {
       const now = new Date();
-      if (videoDuration) {
-        const streamEnd = new Date(STREAM_START_TIME.getTime() + videoDuration * 1000);
-        if (now > streamEnd) {
-          setPageState('ended');
-          setCountdown(null);
-          return;
-        }
-      }
       if (now < STREAM_START_TIME) {
         const diff = STREAM_START_TIME - now;
         const mins = Math.floor(diff / 60000);
@@ -63,9 +44,22 @@ export default function WatchHLSPage({ params }) {
       }
     };
     checkState();
-    timer = setInterval(checkState, 1000);
+    const timer = setInterval(() => {
+      const now = new Date();
+      if (now < STREAM_START_TIME) {
+        const diff = STREAM_START_TIME - now;
+        const mins = Math.floor(diff / 60000);
+        const secs = Math.floor((diff % 60000) / 1000);
+        setCountdown({ mins, secs });
+        setPageState('countdown');
+      } else {
+        setCountdown(null);
+        setPageState('live');
+        clearInterval(timer);
+      }
+    }, 1000);
     return () => clearInterval(timer);
-  }, [slug, videoDuration]);
+  }, [slug]);
 
   // --- HLS.js setup ---
   useEffect(() => {
@@ -74,6 +68,7 @@ export default function WatchHLSPage({ params }) {
     setIsLoading(true);
     setHasSeeked(false);
     setStreamEnded(false);
+    setSeekAttempts(0);
     const video = videoRef.current;
     let hls;
     if (Hls.isSupported()) {
@@ -106,37 +101,68 @@ export default function WatchHLSPage({ params }) {
   useEffect(() => {
     if (!videoRef.current || pageState !== 'live' || hasSeeked) return;
     const video = videoRef.current;
-    const onCanPlay = () => {
-      setVideoDuration(video.duration);
+    
+    const seekToLivePosition = () => {
       const now = new Date();
       const elapsed = Math.floor((now - STREAM_START_TIME) / 1000);
-      if (elapsed < 0) return; // before stream
+      
+      if (elapsed < 0) {
+        video.currentTime = 0;
+        setHasSeeked(true);
+        video.play().catch(() => {});
+        return;
+      }
+      
       if (elapsed >= video.duration) {
         setStreamEnded(true);
         setPageState('ended');
-        video.currentTime = 0;
+        video.currentTime = video.duration;
         video.pause();
+        setHasSeeked(true);
         return;
       }
-      // Only seek if buffered, else start from 0
-      let canSeek = false;
-      for (let i = 0; i < video.buffered.length; i++) {
-        if (video.buffered.start(i) <= elapsed && elapsed <= video.buffered.end(i)) {
-          canSeek = true;
-          break;
-        }
-      }
-      if (canSeek) {
-        video.currentTime = elapsed;
-      } else {
+      
+      // Try to seek to the live position
+      video.currentTime = elapsed;
+      setSeekAttempts(prev => prev + 1);
+      
+      // If seeking fails after multiple attempts, start from beginning
+      if (seekAttempts >= 3) {
         video.currentTime = 0;
+        setHasSeeked(true);
+        video.play().catch(() => {});
+        return;
       }
-      setHasSeeked(true);
-      video.play().catch(() => {});
+      
+      // Check if seek was successful after a short delay
+      setTimeout(() => {
+        if (Math.abs(video.currentTime - elapsed) > 5) {
+          seekToLivePosition();
+        } else {
+          setHasSeeked(true);
+          video.play().catch(() => {});
+        }
+      }, 500);
     };
+    
+    const onCanPlay = () => {
+      setVideoDuration(video.duration);
+      seekToLivePosition();
+    };
+    
+    const onLoadedMetadata = () => {
+      // Wait a bit more for buffering before seeking
+      setTimeout(seekToLivePosition, 1000);
+    };
+    
     video.addEventListener('canplay', onCanPlay);
-    return () => video.removeEventListener('canplay', onCanPlay);
-  }, [slug, pageState, hasSeeked]);
+    video.addEventListener('loadedmetadata', onLoadedMetadata);
+    
+    return () => {
+      video.removeEventListener('canplay', onCanPlay);
+      video.removeEventListener('loadedmetadata', onLoadedMetadata);
+    };
+  }, [slug, pageState, hasSeeked, seekAttempts]);
 
   // --- Track current time ---
   useEffect(() => {
@@ -144,8 +170,34 @@ export default function WatchHLSPage({ params }) {
     if (!video) return;
     const onTimeUpdate = () => setCurrentTime(video.currentTime);
     video.addEventListener('timeupdate', onTimeUpdate);
-    return () => video.removeEventListener('timeupdate', onTimeUpdate);
-  }, []);
+
+    // Add ended event listener
+    const onEnded = () => {
+      setStreamEnded(true);
+      setPageState('ended');
+    };
+    video.addEventListener('ended', onEnded);
+
+    // Fallback: check every second if video is at the end
+    const interval = setInterval(() => {
+      if (
+        video.duration &&
+        video.currentTime &&
+        !video.paused &&
+        Math.abs(video.duration - video.currentTime) < 1 &&
+        !streamEnded
+      ) {
+        setStreamEnded(true);
+        setPageState('ended');
+      }
+    }, 1000);
+
+    return () => {
+      video.removeEventListener('timeupdate', onTimeUpdate);
+      video.removeEventListener('ended', onEnded);
+      clearInterval(interval);
+    };
+  }, [streamEnded]);
 
   // --- Mute toggle ---
   const toggleMute = () => {
@@ -208,8 +260,8 @@ export default function WatchHLSPage({ params }) {
         <div className="fixed inset-0 bg-neutral-100 flex items-center justify-center z-50">
           <div className="text-center">
             <div className="text-neutral-500 text-6xl mb-4">📺</div>
-            <h2 className="text-2xl font-bold mb-2 text-neutral-800">Live Stream Ended</h2>
-            <p className="text-neutral-600">The live stream has concluded. Thanks for watching!</p>
+            <h2 className="text-2xl font-bold mb-2 text-neutral-800">Live class ended</h2>
+            <p className="text-neutral-600">We hope you enjoyed the live session.</p>
           </div>
         </div>
       )}
@@ -253,10 +305,7 @@ export default function WatchHLSPage({ params }) {
                 />
                 {/* Controls */}
                 {!isLoading && !error && !streamEnded && (
-                  <div className="absolute bottom-4 right-4 flex items-center space-x-4 z-20">
-                    <div className="bg-black bg-opacity-80 px-3 py-1 rounded text-sm text-white font-medium">
-                      {formatTime(currentTime)} / {formatTime(videoDuration)}
-                    </div>
+                  <div className="absolute bottom-4 right-4 z-20">
                     <button
                       onClick={toggleMute}
                       className="bg-black bg-opacity-80 p-2 rounded hover:bg-opacity-90 transition-all"
@@ -267,7 +316,7 @@ export default function WatchHLSPage({ params }) {
                         </svg>
                       ) : (
                         <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.617.793L5.5 14H3a1 1 0 01-1-1V7a1 1 0 011-1h2.5l3.883-3.707zM12.293 7.293a1 1 0 011.414 0L15 8.586l1.293-1.293a1 1 0 111.414 1.414L16.414 10l1.293 1.293a1 1 0 01-1.414 1.414L15 11.414l-1.293 1.293a1 1 0 01-1.414-1.414L13.586 10l-1.293-1.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                          <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.617.793L5.5 14H3a1 1 0 01-1-1h2.5l3.883-3.707zM12.293 7.293a1 1 0 011.414 0L15 8.586l1.293-1.293a1 1 0 111.414 1.414L16.414 10l1.293 1.293a1 1 0 01-1.414 1.414L15 11.414l-1.293 1.293a1 1 0 01-1.414-1.414L13.586 10l-1.293-1.293a1 1 0 010-1.414z" clipRule="evenodd" />
                         </svg>
                       )}
                     </button>
