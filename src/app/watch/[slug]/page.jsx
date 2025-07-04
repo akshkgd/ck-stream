@@ -387,10 +387,10 @@ export default function WatchPage() {
   }
   if (streamState === 'countdown' && countdown) {
     return (
-      <div className="fixed inset-0 bg-black flex items-center justify-center z-50">
+      <div className="fixed inset-0 bg-black flex items-center justify-center z-50 select-none">
         <div className="text-center">
-          <h1 className="text-3xl font-semibold text-white mb-4">{eventData.title}</h1>
-          <h2 className="text-4xl text-white font-semibold mb-2">
+          <h1 className="text-3xl font-semibold text-neutral-200 mb-4">{eventData.title}</h1>
+          <h2 className="text-lg text-neutral-400 font- mb-2">
             Live class starts in{' '}
             <span className="inline-block min-w-[2ch] text-center animate-pulse">{countdown.hours.toString().padStart(2, '0')}</span>
             :
@@ -398,7 +398,7 @@ export default function WatchPage() {
             :
             <span className="inline-block min-w-[2ch] text-center animate-pulse">{countdown.secs.toString().padStart(2, '0')}</span>
           </h2>
-          <p className="border border-neutral-900 rounded-md px-2 py-1 text-neutral-500">Event ID: {eventData.uuid}</p>
+          <p className="border border-neutral-900 rounded-md px-2 py-1 text-neutral-500 mt-8">Stream ID: {eventData.uuid}</p>
         </div>
       </div>
     );
