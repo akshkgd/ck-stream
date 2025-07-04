@@ -10,7 +10,7 @@ This project includes a YouTube-style live streaming page with a custom HLS-base
 - 🚫 Restricted user controls (no pause, no seeking, no keyboard controls)
 - 🔊 Mute/unmute functionality
 - 📱 Responsive design
-- 🎯 Live indicator and time display
+- 🎯 time display from how long stream is happening
 
 ## Setup Instructions
 
