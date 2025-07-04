@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Hls from 'hls.js';
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore, collection, query, where, getDocs, doc, updateDoc, onSnapshot, increment } from 'firebase/firestore';
 import { getDatabase, ref as rtdbRef, set, onDisconnect, onValue } from "firebase/database";
 import {
@@ -27,7 +27,12 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
+let app;
+if (!getApps().length) {
+  app = initializeApp(firebaseConfig);
+} else {
+  app = getApps()[0];
+}
 const db = getFirestore(app);
 
 export default function WatchPage() {

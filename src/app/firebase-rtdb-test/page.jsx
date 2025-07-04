@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps } from "firebase/app";
 import { getDatabase, ref, set, get, onValue } from "firebase/database";
 
 // Firebase config from env
@@ -15,7 +15,12 @@ const firebaseConfig = {
   databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
 };
 
-const app = initializeApp(firebaseConfig);
+let app;
+if (!getApps().length) {
+  app = initializeApp(firebaseConfig);
+} else {
+  app = getApps()[0];
+}
 const db = getDatabase(app);
 
 export default function FirebaseRTDBTest() {
